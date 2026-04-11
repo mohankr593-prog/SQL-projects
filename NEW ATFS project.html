@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ATFS Restaurant PRO</title>
+
+<style>
+body { font-family: Arial; background:#f2f2f2; padding:20px; margin:0; }
+h1,h2,h3 { text-align:center; }
+
+#app { display:flex; gap:20px; margin-top:20px; }
+
+.menu,.combo-menu {
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(180px,1fr));
+  gap:15px;
+}
+
+.menu-item,.combo-item {
+  background:#fff;
+  padding:10px;
+  border-radius:10px;
+  text-align:center;
+}
+
+.menu-item img,.combo-item img {
+  width:100%;
+  height:120px;
+  object-fit:cover;
+}
+
+button { margin:5px; padding:5px 10px; cursor:pointer; }
+
+#cart {
+  background:#fff;
+  padding:10px;
+  border-radius:10px;
+}
+</style>
+</head>
+
+<body>
+
+<!-- LOGIN -->
+<div id="login" style="text-align:center;">
+<h2>Admin Login</h2>
+<input id="user" placeholder="Username"><br><br>
+<input id="pass" type="password" placeholder="Password"><br><br>
+<button onclick="login()">Login</button>
+</div>
+
+<!-- APP -->
+<div id="app" style="display:none;">
+<div style="flex:3;">
+<h1>ATFS Restaurant</h1>
+
+<button onclick="clearMenu()">Delete Menu</button>
+<button onclick="clearCombos()">Delete Combos</button>
+<button onclick="clearOrders()">Delete Orders</button>
+<button onclick="clearCart()">Clear Cart</button>
+
+<hr>
+
+<h3>Add Item</h3>
+<input id="name" placeholder="Item name">
+<input id="price" type="number" placeholder="Price">
+<input id="discount" type="number" placeholder="Discount %">
+<select id="category">
+<option value="veg">Veg</option>
+<option value="non-veg">Non-Veg</option>
+<option value="drink">Drink</option>
+</select>
+<input id="image" type="file">
+<button onclick="addItem()">Save</button>
+
+<div id="menu" class="menu"></div>
+
+<hr>
+
+<h3>Add Combo</h3>
+<input id="combo-name" placeholder="Combo name">
+<input id="combo-price" type="number" placeholder="Price">
+<select id="combo-items" multiple></select>
+<input id="combo-image" type="file">
+<button onclick="addCombo()">Save Combo</button>
+
+<div id="combo-menu" class="combo-menu"></div>
+
+<hr>
+
+<h3>Orders</h3>
+<button onclick="downloadPDF()">PDF</button>
+<button onclick="downloadExcel()">Excel</button>
+<div id="orders"></div>
+
+</div>
+
+<div style="flex:1;">
+<div id="cart"></div>
+</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<script>
+
+// ✅ FIXED LOGIN
+function login(){
+const u = document.getElementById("user").value;
+const p = document.getElementById("pass").value;
+
+if(u==="mohankumar" && p==="9693"){
+document.getElementById("login").style.display="none";
+document.getElementById("app").style.display="flex";
+
+renderMenu();
+renderComboMenu();
+renderCart();
+loadOrders();
+updateComboItemsSelect();
+
+}else{
+alert("Wrong login");
+}
+}
+
+// DATA
+let menu=JSON.parse(localStorage.getItem("menu"))||{};
+let combos=JSON.parse(localStorage.getItem("combos"))||{};
+let cart=[];
+
+// SAVE
+function saveMenu(){localStorage.setItem("menu",JSON.stringify(menu));}
+function saveCombos(){localStorage.setItem("combos",JSON.stringify(combos));}
+
+// ADD ITEM
+function addItem(){
+let name=document.getElementById("name").value.trim();
+let price=parseFloat(document.getElementById("price").value);
+let discount=parseFloat(document.getElementById("discount").value)||0;
+let category=document.getElementById("category").value;
+let file=document.getElementById("image").files[0];
+
+if(!name||isNaN(price)) return alert("Fill correctly");
+
+let reader=new FileReader();
+reader.onload=function(e){
+menu[name]={price,category,discount,img:e.target.result};
+saveMenu();
+renderMenu();
+updateComboItemsSelect();
+}
+reader.readAsDataURL(file);
+}
+
+// ADD COMBO
+function addCombo(){
+let name=document.getElementById("combo-name").value;
+let price=parseFloat(document.getElementById("combo-price").value);
+let selected=[...document.getElementById("combo-items").selectedOptions].map(o=>o.value);
+let file=document.getElementById("combo-image").files[0];
+
+if(!name||isNaN(price)||!selected.length) return alert("Fill");
+
+let reader=new FileReader();
+reader.onload=function(e){
+combos[name]={items:selected,price,img:e.target.result};
+saveCombos();
+renderComboMenu();
+}
+reader.readAsDataURL(file);
+}
+
+// RENDER MENU
+function renderMenu(){
+let div=document.getElementById("menu");
+div.innerHTML="";
+for(let item in menu){
+let m=menu[item];
+let d=document.createElement("div");
+d.className="menu-item";
+
+d.innerHTML=`
+<img src="${m.img}">
+<h3>${item}</h3>
+₹${m.price}
+<button onclick="add('${item}')">Add</button>
+`;
+
+div.appendChild(d);
+}
+}
+
+// RENDER COMBO
+function renderComboMenu(){
+let div=document.getElementById("combo-menu");
+div.innerHTML="";
+for(let c in combos){
+let d=document.createElement("div");
+d.className="combo-item";
+
+d.innerHTML=`
+<img src="${combos[c].img}">
+<h3>${c}</h3>
+₹${combos[c].price}
+<button onclick="add('${c}','combo')">Add</button>
+`;
+
+div.appendChild(d);
+}
+}
+
+// CART
+function add(name,type="item"){
+let e=cart.find(i=>i.name===name);
+if(e) e.qty++; else cart.push({name,type,qty:1});
+renderCart();
+}
+
+function renderCart(){
+let div=document.getElementById("cart");
+div.innerHTML="<h3>Cart</h3>";
+cart.forEach(c=>{
+div.innerHTML+=`${c.name} x ${c.qty}<br>`;
+});
+div.innerHTML+=`<button onclick="placeOrder()">Order</button>`;
+}
+
+// ORDER
+function placeOrder(){
+let orders=JSON.parse(localStorage.getItem("orders"))||[];
+orders.push({items:cart});
+localStorage.setItem("orders",JSON.stringify(orders));
+cart=[];
+renderCart();
+loadOrders();
+}
+
+// LOAD ORDERS
+function loadOrders(){
+let data=JSON.parse(localStorage.getItem("orders"))||[];
+let div=document.getElementById("orders");
+div.innerHTML="";
+data.forEach(o=>{
+div.innerHTML+=o.items.map(i=>i.name+" x "+i.qty).join(", ")+"<br>";
+});
+}
+
+// CLEAR
+function clearMenu(){menu={};saveMenu();renderMenu();}
+function clearCombos(){combos={};saveCombos();renderComboMenu();}
+function clearOrders(){localStorage.removeItem("orders");loadOrders();}
+function clearCart(){cart=[];renderCart();}
+
+// PDF
+function downloadPDF(){
+const {jsPDF}=window.jspdf;
+let doc=new jsPDF();
+doc.text("Orders",10,10);
+doc.save("orders.pdf");
+}
+
+// EXCEL
+function downloadExcel(){
+let blob=new Blob(["Orders"]);
+let a=document.createElement("a");
+a.href=URL.createObjectURL(blob);
+a.download="orders.csv";
+a.click();
+}
+
+// UPDATE SELECT
+function updateComboItemsSelect(){
+let sel=document.getElementById("combo-items");
+sel.innerHTML="";
+for(let i in menu){
+let o=document.createElement("option");
+o.value=i;
+o.text=i;
+sel.appendChild(o);
+}
+}
+
+</script>
+
+</body>
+</html>
+
+
